@@ -545,16 +545,16 @@ export const generateGeminiVoice = async (
   activeTopic?: string
 ): Promise<string> => {
   const customKey = sessionStorage.getItem('veopro_custom_key');
-  const defaultKey = process.env.API_KEY;
-  
   let allKeys: string[] = [];
-  
-  if (useProjectKey) {
-    if (defaultKey) allKeys.push(defaultKey);
-    const pro1 = process.env.GOOGLE_KEY_PRO1;
-    const pro9 = process.env.GOOGLE_KEY_PRO9;
-    if (pro1) allKeys.push(pro1);
-    if (pro9) allKeys.push(pro9);
+
+if (useProjectKey) {
+
+  const envKeys = (process.env.GOOGLE_API_KEYS || "")
+    .split(",")
+    .map(k => k.trim())
+    .filter(Boolean);
+
+  allKeys.push(...envKeys);
   } else {
     allKeys = [...apiKeys];
     if (customKey && !customKey.startsWith('GOOGLE_KEY_')) allKeys.unshift(customKey);
