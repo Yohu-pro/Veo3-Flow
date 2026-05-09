@@ -75,7 +75,6 @@ export const TRANSLATIONS = {
     PASTE_PROMPTS_ERROR: "Vui lòng dán danh sách prompt hoặc kịch bản.",
     AI_ERROR: "Lỗi AI Studio.",
     QUOTA_EXHAUSTED_DETAIL_VI: "Hết hạn mức API (Quota Exhausted). Vui lòng đổi API Key hoặc nâng cấp gói cước.",
-QUOTA_EXHAUSTED: "Hết hạn mức",
     REGEN_IMAGE_ERROR: "Lỗi tạo lại ảnh.",
     BATCH_REGEN_ERROR: "Lỗi tạo lại ảnh hàng loạt.",
     RENDER_ERROR: "Lỗi Render Studio.",
