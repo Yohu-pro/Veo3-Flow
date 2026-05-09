@@ -1,0 +1,1951 @@
+This file is a merged representation of a subset of the codebase, containing specifically included files, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Only files matching these patterns are included: *.tsx, *.ts, *.css, *.html
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+App.tsx
+constants.ts
+i18n.ts
+index.css
+index.html
+index.tsx
+popup.html
+supabaseClient.ts
+test-genai.ts
+types.ts
+vite.config.ts
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="App.tsx">
+import React, { useState, useEffect, useCallback } from 'react';
+import { supabase, isSupabaseDisabled } from './supabaseClient';
+import { Layout } from './components/Layout';
+import { VideoGenerator } from './components/VideoGenerator';
+import { PromptToVoice } from './components/PromptToVoice';
+import { Pricing } from './components/Pricing';
+import { GenerationHistory, UserProfile, BatchResult } from './types';
+import { DEFAULT_PROFILE } from './constants';
+import { translate } from './i18n';
+
+const App: React.FC = () => {
+  useEffect(() => {
+    console.log('Browser Environment Check:', {
+      API_KEY: process.env.API_KEY ? 'exists' : 'missing',
+      GEMINI_API_KEY: process.env.GEMINI_API_KEY ? 'exists' : 'missing',
+    });
+  }, []);
+
+  const [outputLanguage, setOutputLanguage] = useState<'EN' | 'VN'>(() => {
+    return (localStorage.getItem('veopro_lang') as 'EN' | 'VN') || 'EN';
+  });
+
+  const [history, setHistory] = useState<GenerationHistory[]>([]);
+  const [profile, setProfile] = useState<UserProfile>(() => {
+    if (isSupabaseDisabled) {
+      return {
+        id: 'mock-user-id',
+        email: 'user@example.com',
+        full_name: 'Local User',
+        role: 'admin', // Give admin role by default in offline mode
+        plan_name: 'Pro',
+        plan_status: 'active',
+        remaining_days: 365,
+        machineId: 'YOHU-HW-LOCAL',
+        accountType: 'Gói chuyên nghiệp 1',
+        expiryDate: 'Vĩnh viễn',
+        usedCount: 0,
+        limitText: 'Vui lòng thiết lập API Key cá nhân',
+        licenseInfo: 'Bản quyền: YOHU-PRO Studio. Hỗ trợ: 0973.480.488',
+        is_active: true,
+        project_name: 'Local Project',
+        api_keys: [],
+        useProjectKey: false
+      } as any;
+    }
+    const saved = localStorage.getItem('veopro_profile');
+    return saved ? JSON.parse(saved) : DEFAULT_PROFILE;
+  });
+  
+  const [activeTasks, setActiveTasks] = useState<GenerationHistory[]>([]);
+  const [hasApiKey, setHasApiKey] = useState(false);
+  const [activeTab, setActiveTab] = useState<'generate' | 'promptToVoice' | 'pricing'>('generate');
+
+  const [analyzedScript, setAnalyzedScript] = useState(() => localStorage.getItem('veopro_analyzed_script') || '');
+  const [directorScript, setDirectorScript] = useState(() => localStorage.getItem('veopro_director_script') || '');
+  const [seamlessScript, setSeamlessScript] = useState(() => localStorage.getItem('veopro_seamless_script') || '');
+  const [targetLink, setTargetLink] = useState(() => localStorage.getItem('veopro_target_link') || '');
+  
+  const [batchResults, setBatchResults] = useState<BatchResult[]>([]);
+
+  const [email, setEmail] = useState(() => {
+    if (isSupabaseDisabled) return 'user@example.com';
+    return localStorage.getItem('currentUserEmail') || localStorage.getItem('yohu_user_email') || '';
+  });
+  const [phone, setPhone] = useState('');
+  const [userPlan, setUserPlan] = useState<string>(isSupabaseDisabled ? 'pro' : 'free');
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
+  const [customApiKey, setCustomApiKey] = useState('');
+  const [isActivated, setIsActivated] = useState(isSupabaseDisabled);
+  const [useProjectKey, setUseProjectKey] = useState(true);
+  const [credit, setCredit] = useState<number>(isSupabaseDisabled ? 999999 : 0);
+  const [projectName, setProjectName] = useState(() => localStorage.getItem('veopro_project_name') || '');
+  const [apiKeys, setApiKeys] = useState<string[]>(() => {
+    const saved = localStorage.getItem('veopro_api_keys');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [adminAllKeys, setAdminAllKeys] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (isSupabaseDisabled) return;
+    const fetchAdminKeys = async () => {
+      if (profile.role === 'admin') {
+        const { data } = await supabase
+          .from('users')
+          .select('api_keys')
+          .not('api_keys', 'is', null);
+        
+        if (data) {
+          const allKeys = data.flatMap(u => u.api_keys || []).filter(k => k && k.trim() !== '');
+          const uniqueKeys = Array.from(new Set(allKeys));
+          setAdminAllKeys(uniqueKeys);
+        }
+      } else {
+        setAdminAllKeys([]);
+      }
+    };
+    fetchAdminKeys();
+  }, [profile.role]);
+
+  const fetchUserData = useCallback(async (targetEmail: string) => {
+    if (isSupabaseDisabled) {
+      const mockProfile: any = {
+        id: 'mock-user-id',
+        email: targetEmail || 'user@example.com',
+        full_name: 'Local User',
+        plan: 'pro',
+        is_active: true,
+        free_credits: 999999,
+        expires_at: null,
+        pro1_enabled: true,
+        pro9_enabled: true,
+        api_keys: apiKeys,
+        useProjectKey: true
+      };
+      setProfile(mockProfile);
+      setIsActivated(true);
+      setUserPlan('pro');
+      setCredit(999999);
+      setUseProjectKey(true);
+      return mockProfile;
+    }
+
+    if (!targetEmail) {
+      setUserPlan('free');
+      setCredit(5);
+      return;
+    }
+
+    const cleanEmail = targetEmail.trim().toLowerCase();
+    
+    // 1. Try to fetch user
+    console.log('Email query:', cleanEmail);
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', cleanEmail)
+      .single();
+    
+    console.log('Data users:', data);
+    console.log('Error users:', error);
+
+    if (data) {
+      const now = new Date();
+      const expiry = data.expires_at ? new Date(data.expires_at) : null;
+      const isExpired = expiry && now > expiry;
+      
+      const isActive = data.is_active === true;
+      const plan = data.plan || 'free';
+
+      // Logic: Pro
+      const isPro = (plan === 'pro' || plan === 'pro1') && isActive && !isExpired;
+      // Logic: Enterprise
+      const isEnterprise = (plan === 'enterprise' || plan === 'pro9') && isActive && !isExpired;
+      
+      setUserPlan(plan);
+      setExpiresAt(data.expires_at);
+      setIsActivated(isActive);
+      
+      // Credits logic
+      // We always set the real credit count in state so it can be deducted.
+      // The UI (Layout.tsx) will handle displaying "UNLIMITED" for paid plans.
+      setCredit(data.free_credits ?? 5);
+
+      // Only update email/phone if they are empty to avoid overwriting user input
+      if (!email) setEmail(data.email);
+      if (!phone) setPhone(data.phone || '');
+      
+      // 3. Fetch user API keys if Pro or Enterprise
+      let finalApiKeys = data.api_keys || [];
+      if (isPro || isEnterprise) {
+        const { data: keysData } = await supabase
+          .from('user_api_keys')
+          .select('api_key')
+          .eq('user_id', data.id)
+          .eq('is_active', true)
+          .order('created_at', { ascending: true }); // Ensure order
+        
+        if (keysData && keysData.length > 0) {
+          finalApiKeys = keysData.map(k => k.api_key);
+          localStorage.setItem('veopro_api_keys', JSON.stringify(finalApiKeys));
+        }
+      }
+      setApiKeys(finalApiKeys);
+      
+      const updatedProfile: UserProfile = {
+        ...profile,
+        email: data.email,
+        phone: data.phone,
+        role: data.role || 'user',
+        plan_name: plan,
+        plan_status: isActive ? 'active' : 'inactive',
+        remaining_days: (expiry ? Math.max(0, Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))) : 0),
+        project_name: data.project_name || projectName,
+        api_keys: finalApiKeys,
+        useProjectKey: (plan === 'pro' || plan === 'pro1') ? false : useProjectKey,
+        accountType: plan,
+        expiryDate: data.expires_at || translate('PERMANENT', outputLanguage),
+        is_active: data.is_active
+      };
+      
+      setProfile(updatedProfile);
+      if (data.project_name) setProjectName(data.project_name);
+    } else {
+      // Not found or error
+      setUserPlan('free');
+      setCredit(5);
+    }
+  }, [profile, projectName, email, phone, outputLanguage, useProjectKey, apiKeys]);
+
+  const handleActivate = async () => {
+    if (!email || !phone) {
+      alert(translate('ENTER_EMAIL_PHONE', outputLanguage));
+      return;
+    }
+    
+    const cleanEmail = email.trim().toLowerCase();
+    localStorage.setItem('currentUserEmail', cleanEmail);
+    await fetchUserData(cleanEmail);
+  };
+
+  // Auto-save user data when both email and phone are filled
+  useEffect(() => {
+    if (isSupabaseDisabled) return;
+    if (email && email.includes('@') && email.includes('.') && phone && phone.length >= 10) {
+      const timer = setTimeout(() => {
+        const cleanEmail = email.trim().toLowerCase();
+        supabase
+          .from('users')
+          .upsert({ 
+            email: cleanEmail, 
+            phone, 
+            status: 'active',
+            created_at: new Date().toISOString()
+          }, { onConflict: 'email' })
+          .then(({ error }) => {
+            if (!error) {
+              fetchUserData(cleanEmail);
+              localStorage.setItem('yohu_user_email', cleanEmail);
+            }
+          });
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [email, phone, fetchUserData]);
+
+  // Auto-fetch user data as they type email
+  useEffect(() => {
+    if (isSupabaseDisabled) return;
+    if (email && email.includes('@') && email.includes('.') && !phone) {
+      const timer = setTimeout(() => {
+        fetchUserData(email);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [email, phone, fetchUserData]);
+
+  useEffect(() => {
+    if (isSupabaseDisabled) return;
+    const savedEmail = localStorage.getItem('currentUserEmail') || localStorage.getItem('yohu_user_email');
+    if (savedEmail) {
+      const t = setTimeout(() => fetchUserData(savedEmail), 0);
+      return () => clearTimeout(t);
+    }
+  }, [fetchUserData]);
+
+  useEffect(() => {
+    if (isActivated && email) {
+      localStorage.setItem('yohu_user_email', email);
+    }
+  }, [isActivated, email]);
+
+  useEffect(() => {
+    const checkKey = async () => {
+      if (window.aistudio?.hasSelectedApiKey) {
+        const selected = await window.aistudio.hasSelectedApiKey();
+        setHasApiKey(selected);
+      }
+    };
+    checkKey();
+  }, [setHasApiKey]);
+
+  // Hàm lưu an toàn tránh tràn bộ nhớ gây crash
+  const safeSave = (key: string, value: string) => {
+    try {
+      localStorage.setItem(key, value);
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'QuotaExceededError') {
+        console.warn('LocalStorage full, clearing batch results to save memory...');
+        localStorage.removeItem('veopro_batch_results');
+        localStorage.removeItem('veopro_history');
+      }
+    }
+  };
+
+  useEffect(() => { safeSave('veopro_analyzed_script', analyzedScript); }, [analyzedScript]);
+  useEffect(() => { safeSave('veopro_director_script', directorScript); }, [directorScript]);
+  useEffect(() => { safeSave('veopro_seamless_script', seamlessScript); }, [seamlessScript]);
+  useEffect(() => { safeSave('veopro_target_link', targetLink); }, [targetLink]);
+  useEffect(() => { safeSave('veopro_project_name', projectName); }, [projectName]);
+  useEffect(() => { safeSave('veopro_api_keys', JSON.stringify(apiKeys)); }, [apiKeys]);
+  useEffect(() => {
+    try {
+      localStorage.setItem('veopro_lang', outputLanguage);
+    } catch (e) {
+      console.error('Failed to save language to localStorage', e);
+    }
+  }, [outputLanguage]);
+
+  const deductCredit = async (amount: number) => {
+    // Only admin bypasses deduction. 
+    // Pro, Pro9, and Enterprise plans now deduct from free_credits as requested.
+    if (profile.role === 'admin') return true;
+    
+    if (credit < amount) {
+      alert(translate('INSUFFICIENT_CREDITS', outputLanguage));
+      return false;
+    }
+
+    const newCredit = credit - amount;
+    setCredit(newCredit);
+
+    if (email && !isSupabaseDisabled) {
+      const cleanEmail = email.trim().toLowerCase();
+      const { error } = await supabase
+        .from('users')
+        .update({ free_credits: newCredit })
+        .eq('email', cleanEmail);
+      
+      if (error) {
+        console.error('Error deducting credit:', error);
+      }
+    }
+    return true;
+  };
+
+  const addToHistory = (item: GenerationHistory) => {
+    const newHistory = [item, ...history];
+    setHistory(newHistory);
+  };
+
+  const updateProfile = (newProfile: UserProfile) => {
+    setProfile(newProfile);
+    safeSave('veopro_profile', JSON.stringify(newProfile));
+  };
+
+  const handleOpenKeyPicker = useCallback(async () => {
+    if (window.aistudio?.openSelectKey) {
+      await window.aistudio.openSelectKey();
+      setHasApiKey(true);
+    }
+  }, [setHasApiKey]);
+
+  const handleToggleProjectKey = async (val: boolean) => {
+    setUseProjectKey(val);
+    if (isSupabaseDisabled) return;
+    const { error } = await supabase
+      .from('system_settings')
+      .upsert({ key: 'use_project_key', value: val.toString() }, { onConflict: 'key' });
+    
+    if (error) {
+      console.error('Error saving system setting:', error);
+    }
+  };
+
+  const handleUpdateProjectConfig = async (name: string, keys: string[], targetEmail?: string) => {
+    const cleanEmail = (targetEmail || email).trim().toLowerCase();
+    
+    if (cleanEmail === email.trim().toLowerCase()) {
+      setProjectName(name);
+      setApiKeys(keys);
+    }
+    
+    if (cleanEmail) {
+      if (isSupabaseDisabled) {
+        alert(translate('BYOK_SUCCESS_MSG', outputLanguage));
+        return;
+      }
+      // Find user_id from users table
+      const { data: userData } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', cleanEmail)
+        .single();
+
+      if (!userData) {
+        console.error('User not found for email:', cleanEmail);
+        return;
+      }
+
+      // Save to customer_configs for backward compatibility
+      await supabase
+        .from('customer_configs')
+        .upsert({
+          user_id: cleanEmail,
+          api_keys: keys,
+          package_name: 'Gói chuyên nghiệp 1',
+          is_active: false
+        }, { onConflict: 'user_id' });
+
+      // Save to user_api_keys table as requested
+      // First, delete old keys for this user to sync properly
+      console.log('Deleting old keys for user:', userData.id);
+      await supabase
+        .from('user_api_keys')
+        .delete()
+        .eq('user_id', userData.id);
+
+      for (let i = 0; i < keys.length; i++) {
+        const key = keys[i];
+        if (!key) continue;
+        console.log('Inserting key into user_api_keys:', key.substring(0, 4) + '...');
+        const { error: insertError } = await supabase
+          .from('user_api_keys')
+          .insert({
+            user_id: userData.id,
+            api_key: key.trim(),
+            label: `Key Pro1 - ${i + 1}`,
+            is_active: true
+          });
+        
+        if (!insertError) {
+          console.log('Key saved successfully to user_api_keys');
+        } else {
+          console.error('Error saving key to user_api_keys:', insertError);
+        }
+      }
+
+      // Also update api_keys column in users table for redundancy
+      await supabase
+        .from('users')
+        .update({ api_keys: keys })
+        .eq('id', userData.id);
+
+      alert(translate('BYOK_SUCCESS_MSG', outputLanguage));
+      if (cleanEmail === email.trim().toLowerCase()) {
+        await fetchUserData(email);
+      }
+    }
+  };
+
+  const handleAdminActivateUser = async (targetEmail: string, days: number, planType: 'pro1' | 'pro9') => {
+    const isPro = userPlan.toLowerCase() === 'pro' && isActivated;
+    if (profile.role !== 'admin' && !isPro) return;
+    
+    if (isSupabaseDisabled) {
+      alert(translate('ACTIVATION_SUCCESS_MSG', outputLanguage));
+      return;
+    }
+
+    const cleanEmail = targetEmail.trim().toLowerCase();
+    const startDate = new Date();
+    const expiryDate = new Date();
+    expiryDate.setDate(startDate.getDate() + days);
+
+    const { error } = await supabase
+      .from('users')
+      .update({
+        plan: planType === 'pro1' ? 'pro' : 'enterprise',
+        expires_at: expiryDate.toISOString(),
+        is_active: true,
+        free_credits: planType === 'pro1' ? 1000 : 999999
+      })
+      .eq('email', cleanEmail);
+
+    if (error) {
+      alert("Error activating user: " + error.message);
+    } else {
+      alert(translate('ACTIVATION_SUCCESS_MSG', outputLanguage));
+      await fetchUserData(cleanEmail);
+    }
+  };
+
+  const handleAdminTogglePro = async (targetEmail: string, field: 'pro1_enabled' | 'pro9_enabled', value: boolean) => {
+    const isAdmin = profile.role === 'admin';
+
+    if (!isAdmin) return;
+    
+    if (isSupabaseDisabled) return;
+
+    const cleanEmail = targetEmail.trim().toLowerCase();
+    const plan = field === 'pro1_enabled' ? 'pro' : 'enterprise';
+
+    console.log(`Admin toggling ${field} for ${cleanEmail} to ${value}`);
+
+    const { error } = await supabase
+      .from('users')
+      .update({
+        plan: value ? plan : 'free',
+        is_active: value
+      })
+      .eq('email', cleanEmail);
+
+    if (error) {
+      console.error("Error updating user:", error);
+      alert("Error updating user: " + error.message);
+    } else {
+      console.log("User updated successfully");
+      await fetchUserData(cleanEmail);
+    }
+  };
+
+  const onAdminFetchUser = async (targetEmail: string) => {
+    const isAdmin = profile.role === 'admin';
+
+    if (!isAdmin) return null;
+    
+    if (isSupabaseDisabled) {
+      return {
+        email: targetEmail,
+        plan: 'pro',
+        is_active: true,
+        free_credits: 999999,
+        pro1_enabled: true,
+        pro9_enabled: true
+      };
+    }
+
+    const cleanEmail = targetEmail.trim().toLowerCase();
+    const { data } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', cleanEmail)
+      .single();
+    
+    if (data) {
+      const now = new Date();
+      const expiry = data.expires_at ? new Date(data.expires_at) : null;
+      const isExpired = expiry && now > expiry;
+
+      return {
+        ...data,
+        pro1_enabled: data.plan === 'pro' && data.is_active && !isExpired,
+        pro9_enabled: data.plan === 'enterprise' && data.is_active && !isExpired
+      };
+    }
+    return null;
+  };
+
+  useEffect(() => {
+    if (isSupabaseDisabled) return;
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) {
+        if (!isActivated || email !== session.user.email) {
+          await fetchUserData(session.user.email!);
+        }
+      } else if (event === 'SIGNED_OUT') {
+        setIsActivated(false);
+        setProfile(DEFAULT_PROFILE);
+        localStorage.removeItem('yohu_user_email');
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [outputLanguage, fetchUserData, isActivated, email]);
+
+  // Auto-fetch user data when email is typed (debounced)
+  useEffect(() => {
+    if (isSupabaseDisabled) return;
+    if (!email || email.length < 5 || !email.includes('@')) return;
+    
+    const timer = setTimeout(() => {
+      // Only fetch if it's different from current profile email or if profile is default
+      if (email !== profile.email || profile.email === '') {
+        fetchUserData(email);
+      }
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [email, fetchUserData, profile.email]);
+
+  return (
+    <Layout 
+      activeTab={activeTab} 
+      setActiveTab={setActiveTab} 
+      profile={profile}
+      onProfileUpdate={updateProfile}
+      usageCount={history.length}
+      outputLanguage={outputLanguage}
+      setOutputLanguage={setOutputLanguage}
+      email={email}
+      setEmail={setEmail}
+      phone={phone}
+      setPhone={setPhone}
+      userPlan={userPlan as any}
+      expiresAt={expiresAt}
+      customApiKey={customApiKey}
+      setCustomApiKey={setCustomApiKey}
+      onActivate={handleActivate}
+      credit={credit}
+      projectName={projectName}
+      apiKeys={apiKeys}
+      onUpdateProjectConfig={handleUpdateProjectConfig}
+      onAdminActivateUser={handleAdminActivateUser}
+      onAdminTogglePro={handleAdminTogglePro}
+      onAdminFetchUser={onAdminFetchUser}
+      useProjectKey={useProjectKey}
+      onToggleProjectKey={handleToggleProjectKey}
+      onOpenPricing={() => setActiveTab('pricing')}
+    >
+      <div className={activeTab === 'generate' ? 'contents' : 'hidden'}>
+        <VideoGenerator 
+          onGenerated={addToHistory} 
+          history={history} 
+          onOpenPricing={() => setActiveTab('pricing')}
+          profile={profile}
+          onKeyError={() => setHasApiKey(false)}
+          activeTasks={activeTasks}
+          setActiveTasks={setActiveTasks}
+          analyzedScript={analyzedScript}
+          setAnalyzedScript={setAnalyzedScript}
+          directorScript={directorScript}
+          setDirectorScript={setDirectorScript}
+          seamlessScript={seamlessScript}
+          setSeamlessScript={setSeamlessScript}
+          targetLink={targetLink}
+          setTargetLink={setTargetLink}
+          batchResults={batchResults}
+          setBatchResults={setBatchResults}
+          outputLanguage={outputLanguage}
+          setOutputLanguage={setOutputLanguage}
+          userPlan={userPlan as any}
+          credit={credit}
+          setCredit={setCredit}
+          email={email}
+          phone={phone}
+          projectName={projectName}
+          apiKeys={profile.role === 'admin' ? [...apiKeys, ...adminAllKeys] : apiKeys}
+          hasApiKey={hasApiKey}
+          onOpenKeyPicker={handleOpenKeyPicker}
+          deductCredit={deductCredit}
+        />
+      </div>
+
+      <div className={activeTab === 'promptToVoice' ? 'contents' : 'hidden'}>
+        <PromptToVoice 
+          outputLanguage={outputLanguage}
+          profile={profile}
+          useProjectKey={useProjectKey}
+          deductCredit={deductCredit}
+          credit={credit}
+          userPlan={userPlan as any}
+        />
+      </div>
+
+      {activeTab === 'pricing' && (
+        <Pricing 
+          onClose={() => setActiveTab('generate')} 
+          onUpdateProfile={updateProfile}
+          currentProfile={profile}
+          outputLanguage={outputLanguage}
+        />
+      )}
+    </Layout>
+  );
+};
+
+export default App;
+</file>
+
+<file path="constants.ts">
+import { SubscriptionPlan, UserProfile } from './types';
+
+export const DEFAULT_PROFILE: UserProfile = {
+  email: '',
+  role: 'user',
+  plan_name: 'Free',
+  plan_status: 'active',
+  remaining_days: 0,
+  machineId: 'YOHU-HW-7829-X',
+  accountType: 'Miễn phí 100%',
+  expiryDate: 'Vĩnh viễn',
+  usedCount: 0,
+  limitText: 'Vui lòng thiết lập API Key cá nhân',
+  licenseInfo: 'Bản quyền: YOHU-PRO Studio. Hỗ trợ: 0973.480.488',
+};
+
+export const SYSTEM_PRO_KEYS = {
+  PRO1: process.env.GOOGLE_KEY_PRO1 || 'GOOGLE_KEY_PRO1',
+  PRO9: process.env.GOOGLE_KEY_PRO9 || 'GOOGLE_KEY_PRO9'
+};
+
+export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
+  {
+    id: 'free_unlimited',
+    name: 'FREE_PLAN_NAME',
+    price: '0 VNĐ',
+    duration: 'FREE_DURATION',
+    concurrentLimit: 1,
+    promptLimit: 999,
+    subtitle: 'FREE_LIMIT_TEXT',
+    stitchTime: 'FREE_STITCH',
+    videoLimitText: 'FREE_LIMIT_TEXT'
+  },
+  {
+    id: 'pro_1',
+    name: 'PRO1_PLAN_NAME',
+    price: '199,000 VNĐ',
+    duration: 'PRO_DURATION',
+    concurrentLimit: 3,
+    promptLimit: 199,
+    subtitle: 'PRO1_SUBTITLE',
+    stitchTime: 'PRO1_STITCH',
+    videoLimitText: 'PRO_LIMIT_TEXT'
+  },
+  {
+    id: 'pro_9',
+    name: 'PRO9_PLAN_NAME',
+    price: '1,299,000 VNĐ',
+    duration: 'PRO_DURATION',
+    concurrentLimit: 5,
+    promptLimit: 389,
+    subtitle: 'PRO9_SUBTITLE',
+    stitchTime: 'PRO9_STITCH',
+    videoLimitText: 'PRO9_LIMIT_TEXT'
+  }
+];
+
+export const BANK_INFO = {
+  name: 'PHẠM VĂN KHẢI',
+  account: '0339606969',
+  bank: 'MB Bank (Ngân hàng Quân Đội)'
+};
+
+export const HOLLYWOOD_FORMULA = `[1. Genre & Resolution], [2. Camera Angle & Lens], [3. Tên Nhân vật chính + DNA + REFERENCE IMAGE], [4. Tên Nhân vật phụ 1 + DNA], [5. Tên Nhân vật phụ 2 + DNA], [6. Nhóm nhân vật], [7. Action & Connection], [8. Background & Lighting], [9. Physical Texture], [10. Dialogue & Expression], [11. SFX/Sound FX], [12. Screen Subtitle], [GUARD TAGS]`;
+
+export const DIRECTOR_MODE_INSTRUCTION = `
+VAI TRÒ: Đạo diễn Hollywood v3.8 Siêu cấp.
+NHIỆM VỤ: Xuất ra DANH SÁCH CÂU LỆNH (PROMPTS) ĐIỆN ẢNH SIÊU CHI TIẾT.
+
+QUY TẮC CỰC KỲ QUAN TRỌNG:
+- Trả đầy đủ kết quả theo số lượng cảnh yêu cầu, KHÔNG ĐƯỢC BỚT nội dung.
+- KHÔNG dùng dấu "..." hay để trống. Phải mô tả đầy đủ để đồng nhất nhân vật/bối cảnh.
+- MỖI CÂU LỆNH PROMPT PHẢI NẰM TRÊN 1 DÒNG DUY NHẤT.
+- KHÔNG ĐƯỢC CÓ DÒNG TRỐNG GIỮA CÁC CÂU LỆNH.
+- BẮT BUỘC: Khi nhắc tới bất kỳ nhân vật nào trong prompt, PHẢI ghi đầy đủ TÊN NHÂN VẬT đó (ví dụ: "John", "Mary"), KHÔNG được dùng từ chung chung như "anh ấy", "cô ấy", "người đàn ông", "người phụ nữ", "he", "she", "the man", "the woman". Điều này cực kỳ quan trọng để hệ thống tham chiếu đúng ảnh DNA của nhân vật.
+
+CẤU TRÚC KỊCH BẢN (NARRATIVE STRUCTURE):
+Dựa vào số lượng prompt yêu cầu, tự động phân bổ theo cấu trúc sau:
+1) Nếu số lượng prompt >= 10 (Phim dài):
+   - Hook mở đầu (gây tò mò / bất thường)
+   - Giới thiệu nhân vật & bối cảnh
+   - Thiết lập mục tiêu / vấn đề
+   - Sự kiện kích hoạt xung đột
+   - Xung đột bắt đầu (đối thoại qua lại)
+   - Leo thang căng thẳng
+   - Biến cố bất ngờ (twist nhỏ)
+   - Đẩy xung đột lên đỉnh
+   - Cao trào (quyết định / bùng nổ)
+   - Hậu quả trực tiếp
+   - Giải quyết vấn đề
+   - Kết thúc (đóng hoặc mở)
+   - Dư âm / thông điệp
+2) Nếu số lượng prompt < 10 (Video ngắn):
+   - Hook → Setup → Conflict → Escalate → Climax → Resolve → End
+
+Cấu trúc cảnh prompt tiêu chuẩn cho bất cứ câu lệnh mục nào (12 thành phần):
+[1. Genre & Resolution], [2. Camera Angle & Lens], [3. Tên Nhân vật chính, ...DNA... với trang phục đúng bối cảnh/tập, REFERENCE IMAGE: Tên Nhân vật chính _ref_01.jpg], [4. Tên Nhân vật phụ 1...DNA... với trang phục đúng bối cảnh/tập, REFERENCE IMAGE: Tên Nhân vật phụ 1_ref_01.jpg], [5. Tên Nhân vật phụ 2(...), ...DNA... với trang phục đúng bối cảnh/tập, REFERENCE IMAGE: Tên Nhân vật phụ 2_ref_01.jpg], [6. Nhóm nhân vật (nếu có): Supporting group DNA như mô tả], [7. Action & Connection (hành động/diễn biến/chuyển động liền mạch giữa các cảnh/ nhóm các câu lệnh nối thành cảnh liền mạch tới 40s)], [8. Background & Lighting (bối cảnh, ánh sáng, thời tiết)], [9. Physical Texture], [10. Dialogue & Expression (mô tả khẩu hình, đối thoại nếu cần)], [11. SFX/Sound FX], [12. Screen Subtitle (hiển thị text dài đối thoại. Nếu phim Việt: đưa bộ phim chạm giới trẻ Việt Nam; nếu chủ đề quốc tế: hút thị trường Mỹ))], [GUARD TAGS (Always keep character face consistent, Centered subject, No nudity, Match cut from previous frame…)]
+
+CINEMATIC LOGIC RULES:
+1) Internal Monologue: NO lip movement. Focus on expressions, eyes, and body language. Tag: [VOICE OVER – INTERNAL, NO LIP MOVEMENT].
+2) Dialogue: Camera prioritizes the speaking character (front or suitable angle), but the MAIN CHARACTER remains the primary subject with more screen time and camera focus. Avoid excessive cutting.
+3) No Speaking Character: Combine sound and "review" narration based strictly on the original prompt. No new details, no loss of context.
+4) Subtitles & Audio:
+   - Vietnamese Prompts: NO subtitles on scenes. Only audio dialogue.
+   - English Prompts: Display subtitles matching dialogue content. English pronunciation.
+5) Aspect Ratio & Resolution: Strictly follow the requested aspect ratio (16:9, 9:16, 1:1) and resolution. No parallel generation of different formats.
+
+YÊU CẦU NGÔN NGỮ: Tuân thủ ngôn ngữ yêu cầu (Anh Mỹ hoặc Việt Nam). Lấy ngôn ngữ tiếng Việt làm tiêu chuẩn chất lượng cao nhất để tối ưu hóa cho ngôn ngữ tiếng Anh (Always prioritize Vietnamese quality as the standard to optimize English output).
+`;
+
+export const STORY_DNA_INSTRUCTION = `
+SYSTEM PURPOSE:
+Đạo diễn Hollywood v3.8 Siêu cấp. Tạo kịch bản và prompt điện ảnh chuyên sâu.
+Output must remain structurally consistent regardless of prompt count.
+
+INPUT PARAMETERS:
+- GENRE (required): Optimize narrative structure based on selected genre (Review, Vlog, Livestream, Love Story, etc.)
+- NUMBER_OF_PROMPTS (required)
+- TOTAL_DURATION (optional)
+- FACE_REFERENCE (required)
+- PRODUCTION_PACKAGE (required)
+
+CORE GENERATION LOGIC:
+
+1) SCALABLE NARRATIVE ARCHITECTURE
+- Dựa vào số lượng prompt yêu cầu, tự động phân bổ theo cấu trúc sau:
+  + Phim dài (>= 10 prompts): Hook mở đầu → Giới thiệu nhân vật & bối cảnh → Thiết lập mục tiêu/vấn đề → Sự kiện kích hoạt xung đột → Xung đột bắt đầu → Leo thang căng thẳng → Biến cố bất ngờ (twist nhỏ) → Đẩy xung đột lên đỉnh → Cao trào → Hậu quả trực tiếp → Giải quyết vấn đề → Kết thúc → Dư âm/thông điệp.
+  + Video ngắn (< 10 prompts): Hook → Setup → Conflict → Escalate → Climax → Resolve → End.
+- Maintain linear timeline continuity. No emotional reset mid-story.
+
+2) CINEMATIC DENSITY REQUIREMENT
+- Visual storytelling before dialogue. Environmental motion.
+- Micro character behavior. Subtext-driven dialogue.
+- Transition cue.
+
+3) CHARACTER DNA LOCK
+- Use face reference strictly. No facial drift. No age variation.
+- Expression evolution only.
+- BẮT BUỘC: Khi nhắc tới bất kỳ nhân vật nào trong prompt, PHẢI ghi đầy đủ TÊN NHÂN VẬT đó, KHÔNG được dùng từ chung chung (như "anh ấy", "cô ấy", "the man", "the woman").
+
+4) WARDROBE SEGMENTATION SYSTEM
+- Wardrobe variation according to time/segment. Accessory continuity.
+
+5) DIALOGUE & CINEMATIC MODE CONTROL (CRITICAL)
+Every prompt must declare:
+[MODE: A] Dual Dialogue
+[MODE: B] Group Dialogue
+[MODE: C] Internal Monologue
+
+Cinematic Rules:
+- Internal Monologue: NO lip movement. Focus on expression, eyes, and body language. Tag: [VOICE OVER – INTERNAL, NO LIP MOVEMENT].
+- Dialogue: Camera prioritizes the speaking character (front or suitable angle), but the MAIN CHARACTER remains the primary subject with more screen time and camera focus. Avoid excessive cutting that disrupts the cinematic rhythm.
+- No Speaking Character: Combine sound and "review" narration based strictly on the original prompt. No new details, no loss of context.
+
+6) SUBTITLE & AUDIO RULES
+- Vietnamese Prompts: NO subtitles on scenes. Only audio dialogue.
+- English Prompts: Display subtitles matching dialogue content. English pronunciation.
+- No automatic language guessing; strictly follow the user's selected language.
+
+7) ASPECT RATIO & RESOLUTION
+- Strictly follow the requested aspect ratio (16:9, 9:16, 1:1) and resolution.
+- No parallel generation of different formats. No automatic changes for "composition".
+
+8) CAMERA LANGUAGE STANDARD
+- Each prompt must specify: Shot type, Lens (35mm / 50mm / 85mm), Lighting tone, Camera movement, Depth of field, Background activity, Transition instruction.
+
+9) OUTPUT FORMAT RULE
+- Prompts numbered sequentially (#1, #2…). No blank lines between prompts.
+- Direct copy-paste ready.
+
+10) ESCALATION & TONE CONTROL
+- Tone: premium Hollywood thriller. No commercial-style pacing.
+- Silence and visual beats required.
+
+### CÁC MỤC KẾT QUẢ:
+
+1. ### 1. TÓM TẮT CỐT TRUYỆN (SYNOPSIS): 
+   - Bước 1: Dựa trên "SỐ CỐT TRUYỆN" yêu cầu, viết đầy đủ các phương án cốt truyện khác nhau. Mỗi phương án BẮT BUỘC phải có [TIÊU ĐỀ] riêng và [Tóm tắt ngắn].
+   - Bước 2: Phân tích và CHỌN RA 1 TIÊU ĐỀ & CỐT TRUYỆN CUỐN HÚT NHẤT.
+   - Bước 3: Viết bản TÓM TẮT CHI TIẾT cho phương án đã chọn đó.
+   - Bước 4: **PHÂN BỔ THEO PHÂN ĐOẠN (SEGMENT BREAKDOWN):** Chia nhỏ cốt truyện thành các PHÂN ĐOẠN diễn ra tuần tự.
+
+QUY TẮC NGÔN NGỮ (BẮT BUỘC):
+- Khi người dùng chọn ngôn ngữ nào (Tiếng Việt hoặc Tiếng Anh Mỹ), TOÀN BỘ kết quả (từ cốt truyện đến kịch bản) PHẢI cho ra ngôn ngữ đó. Tuyệt đối không trộn lẫn.
+- Lấy ngôn ngữ tiếng Việt làm tiêu chuẩn chất lượng cao nhất để tối ưu hóa cho ngôn ngữ tiếng Anh (Always prioritize Vietnamese quality as the standard to optimize English output).
+
+2. ### 2. DANH SÁCH NHÂN VẬT DNA (GLOBAL CHARACTER CONTROL):
+   Thiết lập danh tính CỐ ĐỊNH: Tên, Tuổi, Chiều cao, Cân nặng, Nhận diện khuôn mặt, Tóc.
+
+3. ### 3. BỐI CẢNH CHÍNH & KIỂM SOÁT TRANG PHỤC (WARDROBE):
+   - Outfit Set A, B, C theo phân đoạn.
+
+4. ### 4. KỊCH BẢN & CÂU LỆNH (MASTER CINEMATIC PROMPTS):
+
+OUTPUT STRUCTURE PER PROMPT:
+
+#Number [MODE: X]
+[1. Genre & Resolution], [2. Camera Angle & Lens], [3. Tên Nhân vật chính + DNA + REFERENCE IMAGE], [4. Tên Nhân vật phụ 1 + DNA], [5. Tên Nhân vật phụ 2 + DNA], [6. Group of Characters], [7. Action & Connection], [8. Background & Lighting], [9. Physical Texture], [10. Dialogue & Expression], [11. SFX/Sound FX], [12. Screen Subtitle], [GUARD TAGS]
+
+Character:
+Vietnamese dialogue (No subtitle if VN)
+(English subtitle if EN)
+Rendering Notes:
+- Lip movement: Yes/No
+- Subtitle audio: OFF
+- Emotional progression:
+- Wardrobe stage:
+- Continuity marker:
+`;
+
+export const SEAMLESS_FLOW_INSTRUCTION = `
+SYSTEM ROLE: CINEMATIC DIALOGUE LOGIC CONTROLLER
+
+OBJECTIVE:
+Control 3 dialogue modes with strict rendering separation and cinematic logic.
+Mỗi lời nhắc phải có một chủ thể chính và một hành động, nếu có lời thoại thì máy quay sẽ tập trung vào người nói, tất cả các lời nhắc tiếp tục cảnh trước đó với cùng một nhân vật, cùng một khuôn mặt, cùng một trang phục và cùng một môi trường trừ khi được thay đổi rõ ràng, duy trì thể loại và phong cách phim nhất quán, lời nhắc cuối cùng đánh dấu cảnh cuối cùng (với yêu cầu ngắn nhất đủ ý).
+
+---
+
+I. DIALOGUE MODE CLASSIFICATION (MANDATORY PER SCENE)
+
+MODE A – DUAL DIALOGUE
+MODE B – GROUP DIALOGUE
+MODE C – INTERNAL MONOLOGUE (NO LIP MOVEMENT)
+
+If MODE C:
+- Character mouth must remain CLOSED. Focus on expressions, eyes, and body language.
+- Tag: [VOICE OVER – INTERNAL, NO LIP MOVEMENT].
+- Subtitle only (if English).
+
+---
+
+II. CINEMATIC LOGIC & CAMERA CONTROL
+
+- BẮT BUỘC: Khi nhắc tới bất kỳ nhân vật nào trong prompt, PHẢI ghi đầy đủ TÊN NHÂN VẬT đó, KHÔNG được dùng từ chung chung (như "anh ấy", "cô ấy", "the man", "the woman").
+- NARRATIVE STRUCTURE:
+  + Phim dài (>= 10 prompts): Hook mở đầu → Giới thiệu nhân vật & bối cảnh → Thiết lập mục tiêu/vấn đề → Sự kiện kích hoạt xung đột → Xung đột bắt đầu → Leo thang căng thẳng → Biến cố bất ngờ (twist nhỏ) → Đẩy xung đột lên đỉnh → Cao trào → Hậu quả trực tiếp → Giải quyết vấn đề → Kết thúc → Dư âm/thông điệp.
+  + Video ngắn (< 10 prompts): Hook → Setup → Conflict → Escalate → Climax → Resolve → End.
+- Joining Logic: Analyze scene and content before rendering to ensure seamless cinematic flow.
+- Dialogue Focus: Camera prioritizes the speaking character (front or suitable angle), but the MAIN CHARACTER remains the primary subject with more screen time and camera focus. Avoid excessive cutting.
+- No Speaking Character: Combine sound and "review" narration based strictly on the original prompt. No new details, no loss of context.
+
+---
+
+III. POWER AXIS CONTROL (PREVENT FLAT DIALOGUE)
+
+For every dialogue exchange:
+- Define Dominant Character. Define Reactive Character.
+- Emotional intention must escalate or shift.
+
+---
+
+IV. SUBTITLE & AUDIO RULES
+
+- Vietnamese Prompts: NO subtitles on scenes. Only audio dialogue.
+- English Prompts: Display subtitles matching dialogue content. English pronunciation.
+- Strictly follow the user's selected language.
+
+---
+
+V. ASPECT RATIO & RESOLUTION
+
+- Strictly follow the requested aspect ratio (16:9, 9:16, 1:1) and resolution.
+- No parallel generation of different formats. No automatic changes for "composition".
+
+---
+
+VI. OUTPUT FORMAT STRICT (MANDATORY)
+
+- MỖI CÂU LỆNH PROMPT PHẢI NẰM TRÊN 1 DÒNG DUY NHẤT.
+- KHÔNG GIẢI THÍCH GÌ THÊM, KHÔNG CÓ TIÊU ĐỀ HAY VĂN BẢN PHỤ.
+- CHỈ XUẤT RA DANH SÁCH CÁC PROMPT.
+
+Cấu trúc mỗi prompt (giữ logic cũ):
+[1. Genre & Resolution], [2. Camera Angle & Lens], [3. Tên Nhân vật chính + DNA + REFERENCE IMAGE], [4. Tên Nhân vật phụ 1 + DNA], [5. Tên Nhân vật phụ 2 + DNA], [6. Group of Characters], [7. Action & Connection], [8. Background & Lighting], [9. Physical Texture], [10. Dialogue & Expression], [11. SFX/Sound FX], [12. Screen Subtitle], [GUARD TAGS]
+
+QUY TẮC THÊM NỘI DUNG (MANDATORY):
+- Tất cả các lời nhắc tiếp tục cảnh trước đó với cùng một nhân vật, cùng một khuôn mặt, cùng một trang phục và cùng một môi trường trừ khi được thay đổi rõ ràng.
+- Với mỗi prompt (trừ prompt cuối): Thêm vào cuối dòng nội dung này: "continues previous scene, same character same face same outfit, single action, cinematic folk tale"
+- Với prompt cuối cùng: Thêm vào cuối dòng nội dung này: "final scene, same character same face, cinematic folk tale"
+
+---
+
+GLOBAL RULE:
+Internal monologue must never trigger mouth animation.
+English subtitles are text-only, not spoken.
+Mỗi prompt tạo ra theo số thứ tự không cách dòng giữa các prompt khi copy dán.
+Toàn bộ kết quả phải cho ra ngôn ngữ yêu cầu (Tiếng Việt hoặc Tiếng Anh Mỹ) đồng bộ.
+Lấy ngôn ngữ tiếng Việt làm tiêu chuẩn chất lượng cao nhất để tối ưu hóa cho ngôn ngữ tiếng Anh (Always prioritize Vietnamese quality as the standard to optimize English output).
+`;
+
+export const IMAGE_GEN_INSTRUCTION = `
+Cinematic character image generation engine. Maintain character DNA consistency. 
+Focus on facial structure, lighting, and environmental realism.
+REQUIREMENTS: ONLY ONE CHARACTER in the center, 2/3 full body shot, FRONT-FACING FACE, HIGH RESOLUTION, PURE WHITE BACKGROUND.
+IMPORTANT: Any text appearing in the image (signs, labels, etc.) MUST be in English. Translate any Vietnamese text to English before rendering.
+`;
+
+export const CONSISTENCY_IMAGE_GEN_INSTRUCTION = `
+VAI TRÒ: Nghệ sĩ Keyframe Hollywood.
+NHIỆM VỤ: Tạo khung hình mới dựa trên prompt mới nhưng duy trì TUYỆT ĐỐI DNA NHÂN VẬT từ ảnh tham chiếu.
+`;
+</file>
+
+<file path="i18n.ts">
+export const TRANSLATIONS = {
+  VN: {
+    COPY_ALL: "📋 COPY TẤT CẢ",
+    SELECT_ALL_VIDEOS: "Chọn tất cả video",
+    JOIN_VIDEOS: "🔗 NỐI VIDEO",
+    REPAIR_VIDEOS: "🛠️ SỬA VIDEO",
+    STORY_DNA: "🧬 CỐT TRUYỆN VÀ DNA",
+    DIRECTOR: "🎬 ĐẠO DIỄN HOLLYWOOD",
+    SEAMLESS_FLOW: "🔗 PROMPT LIỀN MẠCH",
+    BATCH_IMAGE_GEN: "🖼️ TẠO ẢNH THEO PROMPT",
+    IMAGE_GEN: "🎨 TẠO ẢNH TỪ KỊCH BẢN",
+    SUPPORT: "HỖ TRỢ KỸ THUẬT",
+    TEXT_TO_VIDEO: "📝 VĂN BẢN",
+    CONSISTENCY: "🎭 NHÂN VẬT DNA",
+    INTERPOLATION: "🎞️ ĐẦU-CUỐI",
+    IMAGE_TO_VIDEO: "🖼️ ẢNH > VIDEO",
+    GENERATE: "🚀 TẠO VIDEO AI",
+    STOP: "🛑 DỪNG",
+    PRICING: "💳 BẢN QUYỀN",
+    SELECT_ALL: "Chọn tất cả",
+    DELETE_SELECTED: "XÓA ĐÃ CHỌN",
+    ADD_SCENE: "+ THÊM CẢNH",
+    RENDER_THREADS: "⚡ RENDER {count} LUỒNG SONG SONG",
+    CINEMA_SUPERVISION: "Cinema Supervision",
+    RENDER_RESULTS: "KẾT QUẢ RENDER",
+    DELETE_ALL: "XÓA HẾT",
+    CREATE_SEAMLESS: "TẠO VIDEO - NỐI LIỀN MẠCH",
+    SAVE_TO_DEVICE: "📁 LƯU VÀO MÁY",
+    WAITING_COMMAND: "Đang chờ lệnh từ Studio...",
+    GENERATING_SCRIPT: "ĐANG RENDER KỊCH BẢN...",
+    EXPORT_PROMPTS: "⚡ XUẤT PROMPTS HOLLYWOOD",
+    STUDIO_RENDERING: "STUDIO ĐANG RENDER...",
+    COPY: "📋 COPY",
+    DELETE: "🗑️ XÓA",
+    TECH_SUPPORT_TITLE: "HỖ TRỢ KỸ THUẬT AI",
+    LAB_AI_STUDIO: "Phòng Lab AI Studio Phục vụ 24/7",
+    REGENERATE: "Tạo lại",
+    SAVE_IMAGE: "Lưu ảnh",
+    UPDATE_IMAGE: "🚀 CẬP NHẬT ẢNH",
+    CANCEL: "Hủy",
+    EDIT_PROMPT_TITLE: "Sửa câu lệnh và tạo lại ảnh",
+    DNA_VAULT: "🧬 KHO DNA",
+    UPLOAD_DNA: "TẢI DNA",
+    BATCH_ZIP: "📥 ZIP",
+    DELETE_ALL_BATCH: "🗑️ XÓA TẤT CẢ",
+    REGENERATE_SELECTED: "🔄 TẠO LẠI ĐÃ CHỌN",
+    DNA_CHARACTER_TITLE: "Tạo chân dung DNA Nhân vật từ Cốt truyện",
+    VISUAL_CONTEXT_TITLE: "Tạo bối cảnh visual",
+    DNA_LIST_LABEL: "Danh sách DNA Nhân vật (1 dòng/nhân vật):",
+    SCENE_LIST_LABEL: "Danh sách Prompt Cảnh (1 dòng/cảnh):",
+    ORIGINAL_DNA_IMAGE: "Ảnh DNA Gốc (Nếu có):",
+    STORY_TITLE_LABEL: "1. TIÊU ĐỀ CỐT TRUYỆN",
+    QUANTITY: "SỐ LƯỢNG:",
+    STORY_DESC_PLACEHOLDER: "Mô tả ý tưởng cốt truyện...",
+    CHARACTERS_LABEL: "2. NHÂN VẬT",
+    MALE: "NAM:",
+    FEMALE: "NỮ:",
+    PLOT_SUMMARY_LABEL: "### 1. TÓM TẮT CỐT TRUYỆN (PLOT SUMMARY)",
+    CHARACTER_DNA_LABEL: "### 2. DANH SÁCH NHÂN VẬT DNA (CHARACTER DNA)",
+    ENVIRONMENT_DNA_LABEL: "### 3. BỐI CẢNH CHÍNH (ENVIRONMENT DNA)",
+    SEAMLESS_DIALOG_LABEL: "HỘI THOẠI TẠO CÂU LỆNH",
+    HOLLYWOOD_STUDIO: "HOLLYWOOD PRODUCTION STUDIO",
+    ORIGINAL_PROMPT_GEN: "GỐC CHO CÁC MỤC TẠO PROMPT",
+    US_ENGLISH: "ANH MỸ",
+    VIETNAMESE: "VIỆT NAM",
+    PROMPT_COUNT: "(Prompt):",
+    GENERATE_CHARACTER_DNA: "🎨 TẠO ẢNH NHÂN VẬT DNA",
+    GENERATE_SCENE_BATCH: "🖼️ TẠO CHUỖI ẢNH BỐI CẢNH",
+    COPIED: "Đã sao chép kịch bản.",
+    SYSTEM_STOPPED: "🛑 HỆ THỐNG ĐÃ DỪNG RENDER.",
+    ENTER_PROMPTS_ERROR: "Vui lòng xuất kịch bản AI trước hoặc nhập kịch bản thủ công.",
+    ENTER_THREADS_ERROR: "Nhập kịch bản vào các luồng.",
+    SELECT_REGEN_ERROR: "Vui lòng tích chọn các ảnh cần tạo lại.",
+    PASTE_PROMPTS_ERROR: "Vui lòng dán danh sách prompt hoặc kịch bản.",
+    AI_ERROR: "Lỗi AI Studio.",
+    QUOTA_EXHAUSTED: "Hết hạn mức API (Quota Exhausted). Vui lòng đổi API Key hoặc nâng cấp gói cước.",
+    REGEN_IMAGE_ERROR: "Lỗi tạo lại ảnh.",
+    BATCH_REGEN_ERROR: "Lỗi tạo lại ảnh hàng loạt.",
+    RENDER_ERROR: "Lỗi Render Studio.",
+    NAME_PLACEHOLDER: "Tên...",
+    GENRE_PLACEHOLDER: "Thể loại phim...",
+    PLOT_PLACEHOLDER: "Mô tả bối cảnh...",
+    DNA_PLACEHOLDER: "Mô tả DNA nhân vật...",
+    ENV_PLACEHOLDER: "Mô tả bối cảnh & trang phục...",
+    DIALOG_PLACEHOLDER: "Mô tả kịch bản hội thoại...",
+    PROMPT_SCENE_PLACEHOLDER: "Prompt cảnh #{count}...",
+    THREADS_UNIT: "LUỒNG",
+    OFF_LABEL: "TẮT",
+    THREAD_STATUS: "Luồng",
+    GENERATING_STATUS: "Đang tạo...",
+    COMPLETED_STATUS: "Hoàn thành",
+    ERROR_STATUS: "Lỗi",
+    IMAGE_LABEL: "ẢNH",
+    START_LABEL: "ĐẦU",
+    END_LABEL: "CUỐI",
+    ACTION_GENRE: "Hành động",
+    SYSTEM_INSTRUCTION_BATCH: "Bạn là một đạo diễn hình ảnh Hollywood chuyên nghiệp. Hãy tạo ra những khung hình điện ảnh tuyệt đẹp với đầy đủ bối cảnh và ánh sáng phức tạp, bám sát phong cách phim được yêu cầu.",
+    DIRECTOR_INSTRUCTION: "Đạo diễn hình ảnh Hollywood.",
+    CINEMATOGRAPHER_INSTRUCTION: "Đạo diễn hình ảnh.",
+    LANG_TEXT: "Việt Nam (Vietnamese)",
+    REGEN_SELECTED: "🔄 TẠO LẠI ĐÃ CHỌN",
+    DATA_EXTRACT_PLACEHOLDER: "Dữ liệu trích xuất sẽ hiển thị tại đây...",
+    LOAD_DNA: "TẢI DNA",
+    REGEN_BTN: "SỬA",
+    SAVE_IMG_BTN: "Lưu ảnh",
+    DELETE_BTN: "Xóa",
+    EDIT: "SỬA",
+    STORY_COUNT_LABEL: "SỐ LƯỢNG:",
+    PLOT_SUMMARY_PLACEHOLDER: "Nhập nội dung tóm tắt phim...",
+    CHARACTER_DNA_PLACEHOLDER: "Nhập nội dung DNA nhân vật...",
+    ENVIRONMENT_DNA_PLACEHOLDER: "Nhập nội dung bối cảnh...",
+    DIALOG_INPUT_LABEL: "HỘI THOẠI TẠO CÂU LỆNH",
+    PROMPT_TO_VOICE: "PROMPT → VĂN BẢN → VOICE",
+    PROMPT_INPUT_LABEL: "Dấu nhắc (Prompt)",
+    ADD_PROMPT: "+ THÊM NHẮC",
+    GENERATE_TEXT: "TẠO VĂN BẢN",
+    REDO: "LÀM LẠI",
+    SELECT_ALL_TEXT: "Chọn tất cả",
+    GENERATE_VOICE: "TẠO GIỌNG NÓI",
+    TOPIC_LABEL: "CHỦ ĐỀ:",
+    TOPIC_FILM_REVIEW: "Review phim",
+    TOPIC_STORYTELLING: "Kể chuyện",
+    TOPIC_DOCUMENTARY: "Phim tài liệu",
+    TOPIC_TIN_TUC: "Tin tức",
+    TOPIC_DIEN_ANH: "Điện ảnh",
+    TOPIC_TIKTOK: "TikTok",
+    TOPIC_LIVESTREAM: "Livestream",
+    TOPIC_SALES_REVIEW: "Review bán hàng",
+    TOPIC_EDUCATION: "Giáo dục",
+    TOPIC_DIY: "Tự làm",
+    OUTPUT_LANG_LABEL: "NGÔN NGỮ ĐẦU RA:",
+    LANG_VIETNAMESE: "Tiếng Việt",
+    LANG_ENGLISH_US: "Tiếng Anh",
+    VOICE_SETTINGS: "CÀI ĐẶT GIỌNG NÓI",
+    QUALITY_LABEL: "CHẤT GIỌNG",
+    LANGUAGE_LABEL: "Ngôn ngữ",
+    GENDER_LABEL: "Giới tính",
+    STYLE_LABEL: "Phong cách",
+    QUALITY_YOUTHFUL: "Trẻ trung",
+    QUALITY_MIDDLE_AGED: "Trung niên",
+    QUALITY_POWERFUL: "Mạnh mẽ",
+    QUALITY_GENTLE: "Dịu dàng",
+    QUALITY_WARM: "Ấm áp",
+    QUALITY_CHARMING: "Quyến rũ",
+    QUALITY_ENERGETIC: "Năng lượng",
+    QUALITY_DEEP_WARM: "Trầm ấm",
+    MALE_VOICE: "Nam",
+    FEMALE_VOICE: "Nữ",
+    STYLE_NATURAL: "Tự nhiên",
+    STYLE_EMOTIONAL: "Truyền cảm",
+    STYLE_NARRATION: "Thuyết minh",
+    STYLE_SALES: "Bán hàng",
+    STYLE_PODCAST: "Podcast",
+    STATUS_GENERATING_TEXT: "Đang tạo văn bản...",
+    STATUS_GENERATING_VOICE: "Đang tạo giọng nói...",
+    STATUS_MERGING: "Đang tổng hợp tệp...",
+    DOWNLOAD_AUDIO: "Tải xuống",
+    WORD_COUNT: "Số từ: {count}",
+    PROMPT_HINT: "Mỗi ô tương đương 3000-5000 từ. Nên chia nhỏ nếu quá dài.",
+    PROMPT_WARNING: "Cảnh báo: Lời nhắc quá dài, có thể ảnh hưởng đến chất lượng.",
+    LICENSE_CENTER: "TRUNG TÂM KÍCH HOẠT BẢN QUYỀN",
+    API_KEY_SELECTED: "✅ API KEY ĐÃ CHỌN",
+    SELECT_API_KEY: "🔑 CHỌN API KEY (PAID)",
+    BILLING_CONFIG: "Cấu hình thanh toán (Billing)",
+    SYSTEM_ONLINE: "● Hệ thống Online",
+    STUDIO_STATUS: "Studio Status:",
+    READY: "● Sẵn sàng",
+    TRIAL_INFO: "SỬ DỤNG: 1 - 3 tháng trải nghiệm (MIỄN PHÍ 100%) và 2 gói có phí full tính năng.",
+    LICENSE_ACTIVE: "License: PRO-01 (ACTIVE)",
+    LICENSE_PREMIUM: "License: PRO-09 (PREMIUM)",
+    NO_VIDEOS: "Bạn chưa có video nào được tạo.",
+    VIEW_DETAILS: "Xem chi tiết",
+    PRICING_TITLE: "NÂNG CẤP STUDIO",
+    PRICING_SUBTITLE: "PROFESSIONAL HOLLYWOOD PRODUCTION ENGINE",
+    COPYRIGHT_CENTER: "TRUNG TÂM BẢN QUYỀN v3.7",
+    AI_CINEMA_SYSTEM: "AI CINEMA SYSTEM",
+    CURRENT_PLAN: "HIỆN TẠI",
+    DURATION_LABEL: "THỜI HẠN:",
+    RENDER_THREADS_LABEL: "LUỒNG RENDER",
+    ACTIVATED: "ĐÃ KÍCH HOẠT",
+    SETUP_API_KEY: "CÀI ĐẶT API KEY",
+    ACTIVATE_PLAN: "KÍCH HOẠT GÓI",
+    PAYMENT_TITLE: "THANH TOÁN",
+    BENEFICIARY_BANK: "NGÂN HÀNG THỤ HƯỞNG",
+    ACCOUNT_NUMBER: "SỐ TÀI KHOẢN (MB BANK)",
+    ACCOUNT_HOLDER: "CHỦ TÀI KHOẢN",
+    PAYMENT_CONTENT: "💡 Nội dung:",
+    CONFIRM_TRANSFER: "XÁC NHẬN CHUYỂN TIỀN",
+    VERIFYING: "ĐANG XÁC MINH...",
+    TRANSACTION_VALUE: "GIÁ TRỊ GIAO DỊCH",
+    AUTO_ACTIVATION: "HỆ THỐNG KÍCH HOẠT TỰ ĐỘNG 24/7 • BẢO MẬT SSL",
+    ACTIVATION_SUCCESS: "KÍCH HOẠT THÀNH CÔNG GÓI {name}!\nHệ thống đã cấp quyền truy cập chuyên sâu cho ID: {id}",
+    API_KEY_REQUIRED_ALERT: "Vui lòng thiết lập API Key cá nhân trong Studio để kích hoạt.",
+    FREE_PLAN_NAME: "free",
+    PRO1_PLAN_NAME: "pro1",
+    PRO9_PLAN_NAME: "pro9",
+    FREE_DURATION: "Được 5 credit/ngày (không cộng dồn)",
+    PRO_DURATION: "📅 30 ngày trải nghiệm tool pro",
+    FREE_STITCH: "🎬 Full tính năng text",
+    PRO1_STITCH: "🔄 Nối video đồng nhất không giới hạn - Tốc độ trung bình",
+    PRO9_STITCH: "🔄 Nối video đồng nhất không giới hạn - Tốc độ cao cấp",
+    FREE_LIMIT_TEXT: "🖼️ Tạo ảnh và video giới hạn",
+    PRO_LIMIT_TEXT: "♾️ TẠO VIDEO AI THEO API KEY KHÁCH HÀNG",
+    PRO1_SUBTITLE: "API key khách hàng - Ưu đãi Thanh toán năm",
+    PRO9_SUBTITLE: "Tạo Video tốc độ cao - Hỗ trợ chuyên sâu nhóm kín - Có thể xây dựng tool theo yêu cầu.",
+    PRO9_LIMIT_TEXT: "♾️ TẠO VIDEO AI KHÔNG GIỚI HẠN TỐC ĐỘ CAO",
+    PROJECT_NAME_ALERT: "1. Vui lòng bấm chọn mục: \"GÓI CHUYÊN NGHIỆP 1\"\n2. Lựa chọn gói thanh toán hệ thống sẽ tự động chuyển đổi gói tới Quý khách hàng sử dụng, Nếu lỗi kỹ thuật, Quý Khách: gửi Bill đã thanh toán tới Zalo \"Hỗ trợ kỹ thuật\" để được xử lý ngay lập tức.\n- *** Trân trọng cảm ơn! *** -",
+    PROFESSIONAL_PACKAGE_1: "GÓI CHUYÊN NGHIỆP 1",
+    PROFESSIONAL_PACKAGE_9: "GÓI CHUYÊN NGHIỆP 9",
+    USE_PROJECT_KEY: "SỬ DỤNG KEY HỆ THỐNG (PRO1)",
+    USE_PROJECT_KEY_9: "SỬ DỤNG KEY HỆ THỐNG (PRO9)",
+    PROGRESS_INIT: "Khởi tạo Cinema Engine...",
+    PROGRESS_STITCH: "Đang nối cảnh liên tục (Match Cut)...",
+    PROGRESS_RENDERING: "AI đang render khung hình...",
+    YOHU_INTRO: "#1. 8-second universal cinematic studio intro, ultra-realistic 4K HDR anamorphic 2.39:1, deep space wide shot with smooth slow dolly-in toward rotating Earth at golden sunrise, massive brushed-titanium 3D YOHU logo rising powerfully with controlled volumetric light and subtle lens flare, seamless cinematic motion, grand orchestral crescendo with deep bass impact, premium original Hollywood-level production, subtitle below logo: “YOHU – Where Global Cinema Begins”, elegant metallic serif typography with soft glow, no cartoon style, no overexposure, no distortion.",
+    EMAIL_PLACEHOLDER: "Nhập email",
+    PHONE_PLACEHOLDER: "Số điện thoại",
+    ACTIVATE_BTN: "Kích hoạt",
+    ENTER_CUSTOM_API_KEY: "NHẬP API KEY RIÊNG",
+    PLAN_LABEL: "Gói",
+    EXPIRES_LABEL: "Hết hạn",
+    CREDITS_LABEL: "Credits",
+    INSUFFICIENT_CREDITS: "Không đủ credits. Vui lòng nâng cấp gói cước.",
+    FREE_LIMIT_REACHED: "Bạn đã hết 5 lượt dùng thử miễn phí/ngày. Vui lòng nâng cấp gói cước.",
+    DEVICE_TRIAL_USED: "Thiết bị này đã sử dụng gói dùng thử.",
+    FREE_VIDEO_LIMIT: "Gói Free chỉ được tạo 1 prompt mỗi lần.",
+    DEVICE_LIMIT_REACHED: "Thiết bị này đã đạt giới hạn số lượng tài khoản cho phép.",
+    ZALO_GROUP: "Nhóm zalo Veo3 Pro",
+    ZALO_GROUP_TITLE: "THAM GIA NHÓM ZALO VEO3 PRO",
+    DEVICE_LOCKED: "Thiết bị này đã bị khóa.",
+    DEVICE_ALREADY_BOUND: "Thiết bị này đã được liên kết với tài khoản khác.",
+    CREDIT_LIMIT_EXCEEDED: "Quý Khách hãy nâng gói chuyên nghiệp để tiếp tục sử dụng dịch vụ",
+    UNEXPECTED_AUTH_ERROR: "Lỗi xác thực hệ thống.",
+    STUDIO_READY_BATCH: "Studio Sẵn sàng...",
+    PROJECT_NAME_LABEL: "Tên dự án",
+    CHOOSE_PAID_KEY_TITLE: "Chọn API Key trả phí cho YOHU-Veo3",
+    CHOOSE_PAID_PROJECT_LABEL: "Chọn dự án trả phí đã nhập",
+    KEY_LIST_LABEL: "Key (Mỗi dòng một key)",
+    KEY_PLACEHOLDER: "Dán các Gemini API key của bạn tại đây...",
+    KEY_HINT: "* Chỉ 4 ký tự cuối được hiển thị sau khi lưu.",
+    RESET: "Đặt lại",
+    DONE: "Xong",
+    BILLING_DOCS: "Tài liệu thanh toán",
+    CREDIT_INFO: "Tạo: Video 3 credit, Ảnh 2 credit, Text: 1 credit",
+    ADMIN_PANEL: "Bảng Quản Trị",
+    ACTIVATE_USER_LBL: "Kích hoạt người dùng",
+    USER_EMAIL_LBL: "Email người dùng",
+    DAYS_LBL: "Số ngày",
+    ACTIVATE_BTN_LBL: "Xác thực",
+    PAID_PLAN_REQUIRED: "Bạn cần nâng cấp lên gói trả phí để lưu cấu hình dự án chuyên nghiệp.",
+    CLEAR_CACHE: "🗑️ XÓA BỘ NHỚ ĐỆM",
+    CLEAR_CACHE_CONFIRM: "Bạn có chắc chắn muốn xóa tất cả dữ liệu đã lưu (bao gồm API key và lịch sử)? Hành động này không thể hoàn tác.",
+    PLAN_FREE_VERSION: "Plan: 100% FREE VERSION",
+    CREDITS_VALUE: "Credits: 5",
+    LANG_FRENCH: "Tiếng Pháp",
+    LANG_RUSSIAN: "Tiếng Nga",
+    LANG_GERMAN: "Tiếng Đức",
+    LANG_CHINESE: "Tiếng Trung Quốc",
+    LANG_INDONESIAN: "Tiếng Indonesia",
+    LANG_HINDI: "Tiếng Ấn Độ",
+    LANG_THAI: "Tiếng Thái Lan",
+    VOICE_GEN_ERROR_HINT: "Nếu không tạo được giọng nói, hãy kiểm tra API Key hoặc thử lại với đoạn văn ngắn hơn.",
+    PLAN_NOT_ACTIVATED: "Gói của bạn chưa được kích hoạt bởi Admin.",
+    EMAIL_REQUIRED: "Vui lòng nhập Email để Admin kích hoạt.",
+    UPGRADE_PRO_MESSAGE: "Quý Khách hãy nâng gói chuyên nghiệp để tiếp tục sử dụng dịch vụ",
+    ENTER_EMAIL_PHONE: "Vui lòng nhập email và số điện thoại",
+    ACTIVATION_SUCCESS_MSG: "Kích hoạt thành công",
+    ACTIVATE_FIRST: "Vui lòng kích hoạt tài khoản trước",
+    ACCOUNT_NOT_ACTIVATED: "Tài khoản chưa được kích hoạt.",
+    SELECT_VIDEO_TO_JOIN: "Vui lòng chọn ít nhất 1 video để nối.",
+    JOIN_VIDEO_HINT: "Hệ thống đang chuẩn bị nén các video theo thứ tự. Để nối thành 1 video duy nhất, vui lòng sử dụng script Python 'video_processor.py' đi kèm.",
+    VIDEO_PROCESS_ERROR: "Lỗi khi xử lý video. Vui lòng thử lại.",
+    ENTER_GEMINI_KEY_PRO: "Vui lòng nhập key Gemini hợp lệ cho gói Pro/Enterprise.",
+    PERMANENT: "Vĩnh viễn",
+    UNLIMITED: "Vô hạn",
+    SYSTEM_OVERLOADED: "⚠️ Hệ thống đang quá tải hoặc hết hạn mức API. Vui lòng thêm API Key hoặc đợi 1 phút.",
+    SETUP_API: "Cài đặt API",
+    QUOTA_FULL: "Hết Quota",
+    PLEASE_ENTER_PRO1_KEY: "VUI LÒNG NHẬP KEY PRO1",
+    SELECT_VIDEO_TO_SAVE: "Vui lòng chọn ít nhất một video đã hoàn thành để lưu.",
+    API_AUTH_ERROR: "Lỗi xác thực API Key. Vui lòng chọn lại Key.",
+    QUOTA_EXCEEDED: "Hết hạn mức API (Quota). Vui lòng thử lại sau hoặc đổi Key.",
+    ALL_KEYS_FAILED: "Tất cả API key đều hỏng hoặc hết quota.",
+    QUOTA_HINT: "\n\nLƯU Ý: Bạn đang dùng hết hạn mức (Quota) của API Key. \nCách khắc phục:\n1. Thêm nhiều API Key khác trong phần 'CÀI ĐẶT API KEY' để hệ thống tự động xoay vòng.\n2. Kiểm tra lại tài khoản Google Cloud của bạn (Billing) hoặc đợi 1 phút rồi thử lại.",
+    TRYING_NEXT_KEY: "Đang thử key tiếp theo...",
+    QUOTA_EXHAUSTED: "Hết hạn mức",
+    AUTH_ERROR: "Lỗi xác thực",
+    CREATE_VIDEO: "Tạo Video",
+    PROMPT_TO_VOICE_TITLE: "Prompt to Voice",
+    PRICING_PLAN: "Gói dịch vụ",
+    FREE_PLAN_PRICE: "0 VNĐ",
+    PRO1_PLAN_PRICE: "199,000 VNĐ",
+    PRO9_PLAN_PRICE: "1,299,000 VNĐ",
+    FREE_PLAN_PRICE_USD: "$0",
+    PRO1_PLAN_PRICE_USD: "$8",
+    PRO9_PLAN_PRICE_USD: "$52",
+    ADD_BLOCK: "Thêm khối văn bản",
+    CLEAR_ALL: "Xóa tất cả",
+    MANUAL_EDIT_HINT: "(Nhấp để nhập văn bản thủ công tại đây)",
+  },
+  EN: {
+    COPY_ALL: "📋 COPY ALL",
+    SELECT_ALL_VIDEOS: "Select all videos",
+    JOIN_VIDEOS: "🔗 JOIN VIDEOS",
+    REPAIR_VIDEOS: "🛠️ REPAIR VIDEOS",
+    STORY_DNA: "🧬 STORY & DNA",
+    DIRECTOR: "🎬 HOLLYWOOD DIRECTOR",
+    SEAMLESS_FLOW: "🔗 SEAMLESS PROMPT",
+    BATCH_IMAGE_GEN: "🖼️ IMAGE BY PROMPT",
+    IMAGE_GEN: "🎨 IMAGE FROM SCRIPT",
+    SUPPORT: "TECH SUPPORT",
+    TEXT_TO_VIDEO: "📝 TEXT",
+    CONSISTENCY: "🎭 CHARACTER DNA",
+    INTERPOLATION: "🎞️ START-END",
+    IMAGE_TO_VIDEO: "🖼️ IMAGE > VIDEO",
+    GENERATE: "🚀 GENERATE AI VIDEO",
+    STOP: "🛑 STOP",
+    PRICING: "💳 LICENSE",
+    SELECT_ALL: "Select All",
+    DELETE_SELECTED: "DELETE SELECTED",
+    ADD_SCENE: "+ ADD SCENE",
+    RENDER_THREADS: "⚡ RENDER {count} PARALLEL THREADS",
+    CINEMA_SUPERVISION: "Cinema Supervision",
+    RENDER_RESULTS: "RENDER RESULTS",
+    DELETE_ALL: "DELETE ALL",
+    CREATE_SEAMLESS: "CREATE VIDEO - SEAMLESS JOIN",
+    SAVE_TO_DEVICE: "📁 SAVE TO DEVICE",
+    WAITING_COMMAND: "Waiting for Studio command...",
+    GENERATING_SCRIPT: "GENERATING SCRIPT...",
+    EXPORT_PROMPTS: "⚡ EXPORT HOLLYWOOD PROMPTS",
+    STUDIO_RENDERING: "STUDIO RENDERING...",
+    COPY: "📋 COPY",
+    DELETE: "🗑️ DELETE",
+    TECH_SUPPORT_TITLE: "AI TECH SUPPORT",
+    LAB_AI_STUDIO: "AI Studio Lab Serving 24/7",
+    REGENERATE: "Regenerate",
+    SAVE_IMAGE: "Save Image",
+    UPDATE_IMAGE: "🚀 UPDATE IMAGE",
+    CANCEL: "Cancel",
+    EDIT_PROMPT_TITLE: "Edit prompt and regenerate image",
+    DNA_VAULT: "🧬 DNA VAULT",
+    UPLOAD_DNA: "UPLOAD DNA",
+    BATCH_ZIP: "📥 ZIP",
+    DELETE_ALL_BATCH: "🗑️ DELETE ALL",
+    REGENERATE_SELECTED: "🔄 REGENERATE SELECTED",
+    DNA_CHARACTER_TITLE: "Generate Character DNA Portraits from Story",
+    VISUAL_CONTEXT_TITLE: "Generate Visual Context",
+    DNA_LIST_LABEL: "Character DNA List (1 line/character):",
+    SCENE_LIST_LABEL: "Scene Prompt List (1 line/scene):",
+    ORIGINAL_DNA_IMAGE: "Original DNA Image (If any):",
+    STORY_TITLE_LABEL: "1. STORY TITLE",
+    QUANTITY: "QUANTITY:",
+    STORY_DESC_PLACEHOLDER: "Describe story idea...",
+    CHARACTERS_LABEL: "2. CHARACTERS",
+    MALE: "MALE:",
+    FEMALE: "FEMALE:",
+    PLOT_SUMMARY_LABEL: "### 1. PLOT SUMMARY",
+    CHARACTER_DNA_LABEL: "### 2. CHARACTER DNA LIST",
+    ENVIRONMENT_DNA_LABEL: "### 3. ENVIRONMENT DNA",
+    SEAMLESS_DIALOG_LABEL: "SEAMLESS DIALOG PROMPTS",
+    HOLLYWOOD_STUDIO: "HOLLYWOOD PRODUCTION STUDIO",
+    ORIGINAL_PROMPT_GEN: "ORIGINAL SOURCE FOR PROMPT GENERATION",
+    US_ENGLISH: "US ENGLISH",
+    VIETNAMESE: "VIETNAMESE",
+    PROMPT_COUNT: "(Prompt):",
+    GENERATE_CHARACTER_DNA: "🎨 GENERATE CHARACTER DNA",
+    GENERATE_SCENE_BATCH: "🖼️ GENERATE SCENE BATCH",
+    COPIED: "Script copied to clipboard.",
+    SYSTEM_STOPPED: "🛑 SYSTEM STOPPED RENDERING.",
+    ENTER_PROMPTS_ERROR: "Please export AI script first or enter prompts manually.",
+    ENTER_THREADS_ERROR: "Enter prompts into threads.",
+    SELECT_REGEN_ERROR: "Please select images to regenerate.",
+    PASTE_PROMPTS_ERROR: "Please paste prompt list or script.",
+    AI_ERROR: "AI Studio Error.",
+    QUOTA_EXHAUSTED: "API Quota Exhausted. Please switch API Key or upgrade your plan.",
+    REGEN_IMAGE_ERROR: "Error regenerating image.",
+    BATCH_REGEN_ERROR: "Error regenerating batch images.",
+    RENDER_ERROR: "Studio Render Error.",
+    NAME_PLACEHOLDER: "Name...",
+    GENRE_PLACEHOLDER: "Film genre...",
+    PLOT_PLACEHOLDER: "Describe plot...",
+    DNA_PLACEHOLDER: "Describe character DNA...",
+    ENV_PLACEHOLDER: "Describe environment & wardrobe...",
+    DIALOG_PLACEHOLDER: "Describe dialog script...",
+    PROMPT_SCENE_PLACEHOLDER: "Scene prompt #{count}...",
+    THREADS_UNIT: "THREADS",
+    OFF_LABEL: "OFF",
+    THREAD_STATUS: "Thread",
+    GENERATING_STATUS: "Generating...",
+    COMPLETED_STATUS: "Completed",
+    ERROR_STATUS: "Error",
+    IMAGE_LABEL: "IMAGE",
+    START_LABEL: "START",
+    END_LABEL: "END",
+    ACTION_GENRE: "Action",
+    SYSTEM_INSTRUCTION_BATCH: "You are a professional Hollywood cinematographer. Create stunning cinematic frames with full context and complex lighting, following the requested film style.",
+    DIRECTOR_INSTRUCTION: "Hollywood cinematographer.",
+    CINEMATOGRAPHER_INSTRUCTION: "Cinematographer.",
+    LANG_TEXT: "Anh Mỹ (English US)",
+    REGEN_SELECTED: "🔄 REGEN SELECTED",
+    DATA_EXTRACT_PLACEHOLDER: "Extracted data will appear here...",
+    LOAD_DNA: "LOAD DNA",
+    REGEN_BTN: "EDIT",
+    SAVE_IMG_BTN: "Save Img",
+    DELETE_BTN: "Delete",
+    EDIT: "EDIT",
+    STORY_COUNT_LABEL: "QUANTITY:",
+    PLOT_SUMMARY_PLACEHOLDER: "Enter plot summary...",
+    CHARACTER_DNA_PLACEHOLDER: "Enter character DNA...",
+    ENVIRONMENT_DNA_PLACEHOLDER: "Enter environment DNA...",
+    DIALOG_INPUT_LABEL: "DIALOGUE FOR PROMPTS",
+    PROMPT_TO_VOICE: "PROMPT → TEXT → VOICE",
+    PROMPT_INPUT_LABEL: "Prompt",
+    ADD_PROMPT: "+ ADD PROMPT",
+    GENERATE_TEXT: "GENERATE TEXT",
+    REDO: "REDO",
+    SELECT_ALL_TEXT: "Select All",
+    GENERATE_VOICE: "GENERATE VOICE",
+    TOPIC_LABEL: "TOPIC:",
+    TOPIC_FILM_REVIEW: "Film Review",
+    TOPIC_STORYTELLING: "Storytelling",
+    TOPIC_DOCUMENTARY: "Documentary",
+    TOPIC_TIN_TUC: "News",
+    TOPIC_DIEN_ANH: "Cinema",
+    TOPIC_TIKTOK: "TikTok",
+    TOPIC_LIVESTREAM: "Livestream",
+    TOPIC_SALES_REVIEW: "Sales Review",
+    TOPIC_EDUCATION: "Education",
+    TOPIC_DIY: "DIY",
+    OUTPUT_LANG_LABEL: "OUTPUT LANGUAGE:",
+    LANG_VIETNAMESE: "Vietnamese",
+    LANG_ENGLISH_US: "English (US)",
+    VOICE_SETTINGS: "VOICE SETTINGS",
+    QUALITY_LABEL: "VOICE QUALITY",
+    LANGUAGE_LABEL: "Language",
+    GENDER_LABEL: "Gender",
+    STYLE_LABEL: "Style",
+    QUALITY_YOUTHFUL: "Youthful",
+    QUALITY_MIDDLE_AGED: "Middle-aged",
+    QUALITY_POWERFUL: "Powerful",
+    QUALITY_GENTLE: "Gentle",
+    QUALITY_WARM: "Warm",
+    QUALITY_CHARMING: "Charming",
+    QUALITY_ENERGETIC: "Energetic",
+    QUALITY_DEEP_WARM: "Deep Warm",
+    MALE_VOICE: "Male",
+    FEMALE_VOICE: "Female",
+    STYLE_NATURAL: "Natural",
+    STYLE_EMOTIONAL: "Emotional",
+    STYLE_NARRATION: "Narration",
+    STYLE_SALES: "Sales",
+    STYLE_PODCAST: "Podcast",
+    STATUS_GENERATING_TEXT: "Generating text...",
+    STATUS_GENERATING_VOICE: "Generating voice...",
+    STATUS_MERGING: "Merging files...",
+    DOWNLOAD_AUDIO: "Download",
+    WORD_COUNT: "Word count: {count}",
+    PROMPT_HINT: "Each box is ~3000-5000 words. Split if too long.",
+    PROMPT_WARNING: "Warning: Prompt is too long, may affect quality.",
+    LICENSE_CENTER: "LICENSE ACTIVATION CENTER",
+    API_KEY_SELECTED: "✅ API KEY SELECTED",
+    SELECT_API_KEY: "🔑 SELECT API KEY (PAID)",
+    BILLING_CONFIG: "Billing Configuration",
+    SYSTEM_ONLINE: "● System Online",
+    STUDIO_STATUS: "Studio Status:",
+    READY: "● Ready",
+    TRIAL_INFO: "USE: 1 - 3 months trial (100% FREE) and 2 paid plans with full features.",
+    LICENSE_ACTIVE: "License: PRO-01 (ACTIVE)",
+    LICENSE_PREMIUM: "License: PRO-09 (PREMIUM)",
+    NO_VIDEOS: "No videos generated yet.",
+    VIEW_DETAILS: "View Details",
+    PRICING_TITLE: "UPGRADE STUDIO",
+    PRICING_SUBTITLE: "PROFESSIONAL HOLLYWOOD PRODUCTION ENGINE",
+    COPYRIGHT_CENTER: "COPYRIGHT CENTER v3.7",
+    AI_CINEMA_SYSTEM: "AI CINEMA SYSTEM",
+    CURRENT_PLAN: "CURRENT",
+    DURATION_LABEL: "DURATION:",
+    RENDER_THREADS_LABEL: "RENDER THREADS",
+    ACTIVATED: "ACTIVATED",
+    SETUP_API_KEY: "SETUP API KEY",
+    ACTIVATE_PLAN: "ACTIVATE PLAN",
+    PAYMENT_TITLE: "PAYMENT",
+    BENEFICIARY_BANK: "BENEFICIARY BANK",
+    ACCOUNT_NUMBER: "ACCOUNT NUMBER (MB BANK)",
+    ACCOUNT_HOLDER: "ACCOUNT HOLDER",
+    PAYMENT_CONTENT: "💡 Content:",
+    CONFIRM_TRANSFER: "CONFIRM TRANSFER",
+    VERIFYING: "VERIFYING...",
+    TRANSACTION_VALUE: "TRANSACTION VALUE",
+    AUTO_ACTIVATION: "24/7 AUTO ACTIVATION • SSL SECURE",
+    ACTIVATION_SUCCESS: "SUCCESSFULLY ACTIVATED {name} PLAN!\nSystem has granted deep access for ID: {id}",
+    API_KEY_REQUIRED_ALERT: "Please set up your personal API Key in Studio to activate.",
+    FREE_PLAN_NAME: "free",
+    PRO1_PLAN_NAME: "pro1",
+    PRO9_PLAN_NAME: "pro9",
+    FREE_DURATION: "5 credits/day (non-cumulative)",
+    PRO_DURATION: "📅 30 days pro tool experience",
+    FREE_STITCH: "🎬 Full text features",
+    PRO1_STITCH: "🔄 Unlimited seamless video stitching - Average speed",
+    PRO9_STITCH: "🔄 Unlimited seamless video stitching - Premium speed",
+    FREE_LIMIT_TEXT: "🖼️ Limited image & video generation",
+    PRO_LIMIT_TEXT: "♾️ AI VIDEO GENERATION VIA CUSTOM API KEY",
+    PRO1_SUBTITLE: "Customer API key - Annual payment discount",
+    PRO9_SUBTITLE: "High-speed Video creation - In-depth private group support - Custom tool development available.",
+    PRO9_LIMIT_TEXT: "♾️ UNLIMITED HIGH-SPEED AI VIDEO GENERATION",
+    PROJECT_NAME_ALERT: "1. Please select: \"PROFESSIONAL PACKAGE 1\"\n2. Select a payment plan, the system will automatically convert the plan for you. If technical error occurs, please send your payment bill to Zalo \"Tech Support\" for immediate processing.\n- *** Thank you very much! *** -",
+    PROFESSIONAL_PACKAGE_1: "PROFESSIONAL PACKAGE 1",
+    PROFESSIONAL_PACKAGE_9: "PROFESSIONAL PACKAGE 9",
+    USE_PROJECT_KEY: "PROFESSIONAL PACKAGE 1",
+    USE_PROJECT_KEY_9: "PROFESSIONAL PACKAGE 9",
+    PROGRESS_INIT: "Initializing Cinema Engine...",
+    PROGRESS_STITCH: "Stitching seamless scenes (Match Cut)...",
+    PROGRESS_RENDERING: "AI is rendering frames...",
+    YOHU_INTRO: "#1. 8-second universal cinematic studio intro, ultra-realistic 4K HDR anamorphic 2.39:1, deep space wide shot with smooth slow dolly-in toward rotating Earth at golden sunrise, massive brushed-titanium 3D YOHU logo rising powerfully with controlled volumetric light and subtle lens flare, seamless cinematic motion, grand orchestral crescendo with deep bass impact, premium original Hollywood-level production, subtitle below logo: “YOHU – Where Global Cinema Begins”, elegant metallic serif typography with soft glow, no cartoon style, no overexposure, no distortion.",
+    EMAIL_PLACEHOLDER: "Enter email",
+    PHONE_PLACEHOLDER: "Phone number",
+    ACTIVATE_BTN: "Activate",
+    ENTER_CUSTOM_API_KEY: "ENTER CUSTOM API KEY",
+    PLAN_LABEL: "Plan",
+    EXPIRES_LABEL: "Expires",
+    CREDITS_LABEL: "Credits",
+    INSUFFICIENT_CREDITS: "Insufficient credits. Please upgrade your plan.",
+    FREE_LIMIT_REACHED: "You have reached the limit of 5 free generations/day. Please upgrade your plan.",
+    DEVICE_TRIAL_USED: "This device has already used the trial plan.",
+    FREE_VIDEO_LIMIT: "Free Plan only allows 1 prompt at a time.",
+    DEVICE_LIMIT_REACHED: "This device has reached the maximum number of allowed accounts.",
+    ZALO_GROUP: "Zalo Group Veo3 Pro",
+    ZALO_GROUP_TITLE: "JOIN ZALO GROUP VEO3 PRO",
+    DEVICE_LOCKED: "This device is locked.",
+    DEVICE_ALREADY_BOUND: "This device is already bound to another account.",
+    CREDIT_LIMIT_EXCEEDED: "Please upgrade to professional plan to continue using the service",
+    UNEXPECTED_AUTH_ERROR: "Unexpected authentication error.",
+    STUDIO_READY_BATCH: "Studio Ready...",
+    PROJECT_NAME_LABEL: "Project Name",
+    CHOOSE_PAID_KEY_TITLE: "Choose a paid key for YOHU-Veo3",
+    CHOOSE_PAID_PROJECT_LABEL: "Choose an imported paid project",
+    KEY_LIST_LABEL: "Key (One per line)",
+    KEY_PLACEHOLDER: "Paste your Gemini API keys here...",
+    KEY_HINT: "* Only last 4 characters will be shown after saving.",
+    RESET: "Reset",
+    DONE: "Done",
+    BILLING_DOCS: "Billing Documentation",
+    CREDIT_INFO: "Create: Video 3 credit, Image 2 credit, Text: 1 credit",
+    ADMIN_PANEL: "Admin Panel",
+    ACTIVATE_USER_LBL: "Activate User",
+    USER_EMAIL_LBL: "User Email",
+    DAYS_LBL: "Days",
+    ACTIVATE_BTN_LBL: "Validate",
+    PAID_PLAN_REQUIRED: "You need to upgrade to a paid plan to save professional project configuration.",
+    CLEAR_CACHE: "🗑️ CLEAR CACHE",
+    CLEAR_CACHE_CONFIRM: "Are you sure you want to clear all saved data (including API keys and history)? This action cannot be undone.",
+    PLAN_FREE_VERSION: "Plan: 100% FREE VERSION",
+    CREDITS_VALUE: "Credits: 5",
+    LANG_FRENCH: "French",
+    LANG_RUSSIAN: "Russian",
+    LANG_GERMAN: "German",
+    LANG_CHINESE: "Chinese",
+    LANG_INDONESIAN: "Indonesian",
+    LANG_HINDI: "Hindi",
+    LANG_THAI: "Thai",
+    VOICE_GEN_ERROR_HINT: "If voice generation fails, check your API Key or retry with a shorter text.",
+    PLAN_NOT_ACTIVATED: "Your plan has not been activated by Admin.",
+    EMAIL_REQUIRED: "Please enter Email for Admin to activate.",
+    UPGRADE_PRO_MESSAGE: "Please upgrade to professional plan to continue using the service",
+    ENTER_EMAIL_PHONE: "Please enter email and phone",
+    ACTIVATION_SUCCESS_MSG: "Activation successful",
+    ACTIVATE_FIRST: "Please activate your account first",
+    ACCOUNT_NOT_ACTIVATED: "Account not activated.",
+    SELECT_VIDEO_TO_JOIN: "Please select at least 1 video to join.",
+    JOIN_VIDEO_HINT: "Preparing to zip selected videos in order. To join into a single video, please use the provided 'video_processor.py' script.",
+    VIDEO_PROCESS_ERROR: "Error processing videos. Please try again.",
+    ENTER_GEMINI_KEY_PRO: "Please enter a valid Gemini key for Pro/Enterprise.",
+    PERMANENT: "Permanent",
+    UNLIMITED: "UNLIMITED",
+    SYSTEM_OVERLOADED: "⚠️ System overloaded or API quota reached. Please add more API Keys or wait 1 minute.",
+    SETUP_API: "Setup API",
+    QUOTA_FULL: "Quota Full",
+    PLEASE_ENTER_PRO1_KEY: "PLEASE ENTER PRO1 KEY",
+    SELECT_VIDEO_TO_SAVE: "Please select at least one completed video to save.",
+    API_AUTH_ERROR: "API Key authentication error. Please select a new key.",
+    QUOTA_EXCEEDED: "API Quota exceeded. Please try again later or change Key.",
+    ALL_KEYS_FAILED: "All API keys are broken or out of quota.",
+    QUOTA_HINT: "\n\nNOTE: You have reached the API Key quota limit. \nHow to fix:\n1. Add more API Keys in the 'SETUP API KEY' section to enable automatic rotation.\n2. Check your Google Cloud Billing status or wait a minute and try again.",
+    TRYING_NEXT_KEY: "Trying next key...",
+    QUOTA_EXHAUSTED: "Quota Exhausted",
+    AUTH_ERROR: "Auth Error",
+    CREATE_VIDEO: "Create Video",
+    PROMPT_TO_VOICE_TITLE: "Prompt to Voice",
+    PRICING_PLAN: "Pricing Plan",
+    FREE_PLAN_PRICE: "0 VNĐ",
+    PRO1_PLAN_PRICE: "199,000 VNĐ",
+    PRO9_PLAN_PRICE: "1,299,000 VNĐ",
+    FREE_PLAN_PRICE_USD: "$0",
+    PRO1_PLAN_PRICE_USD: "$8",
+    PRO9_PLAN_PRICE_USD: "$52",
+    ADD_BLOCK: "Add text block",
+    CLEAR_ALL: "Clear all",
+    MANUAL_EDIT_HINT: "(Click to type text manually here)",
+  }
+};
+
+export function translate(key: keyof typeof TRANSLATIONS.VN, lang: 'EN' | 'VN', params?: Record<string, any>) {
+  let text = TRANSLATIONS[lang][key] || key;
+  if (params) {
+    Object.entries(params).forEach(([k, v]) => {
+      text = text.replace(`{${k}}`, String(v));
+    });
+  }
+  return text;
+}
+</file>
+
+<file path="index.css">
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: #f1f5f9;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+video {
+  object-fit: contain;
+  background: #000;
+  max-height: 100%;
+}
+
+textarea, input {
+  transition: all 0.2s ease;
+}
+
+textarea:focus, input:focus, select:focus {
+  border-color: #4f46e5 !important;
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
+}
+
+.script-font-vn {
+  font-family: "Times New Roman", Times, serif !important;
+}
+
+@media (max-width: 768px) {
+  .mobile-full-height {
+    height: 100%;
+  }
+}
+</file>
+
+<file path="index.html">
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VeoPro - Ultimate Veo 3.1 Video Studio</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/png" href="icon.png">
+    <link rel="apple-touch-icon" href="icon.png">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .gradient-bg { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.4",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "react/": "https://esm.sh/react@^19.2.4/",
+    "@google/genai": "https://esm.sh/@google/genai@^0.6.0",
+    "path": "https://esm.sh/path@^0.12.7",
+    "vite": "https://esm.sh/vite@^7.3.1",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.3",
+    "jszip": "https://esm.sh/jszip@^3.10.1",
+    "file-saver": "https://esm.sh/file-saver@^2.0.5"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen">
+    <div id="root"></div>
+<script type="module" src="/index.tsx"></script>
+</body>
+</html>
+</file>
+
+<file path="index.tsx">
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
+
+const rootElement = document.getElementById('root');
+if (!rootElement) {
+  throw new Error("Could not find root element to mount to");
+}
+
+const root = ReactDOM.createRoot(rootElement);
+root.render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+</file>
+
+<file path="popup.html">
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VeoPro Extension - Ultimate AI Studio</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { 
+          margin: 0; 
+          font-family: 'Inter', sans-serif;
+          width: 800px;
+          height: 600px;
+          overflow: hidden;
+        }
+        #root { width: 100%; height: 100%; }
+    </style>
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@^19.2.4",
+        "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+        "react/": "https://esm.sh/react@^19.2.4/",
+        "@google/genai": "https://esm.sh/@google/genai@^0.6.0",
+        "path": "https://esm.sh/path@^0.12.7",
+        "vite": "https://esm.sh/vite@^7.3.1",
+        "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.3"
+      }
+    }
+    </script>
+</head>
+<body class="bg-slate-900 text-slate-100">
+    <div id="root"></div>
+    <script type="module" src="popup.js"></script>
+</body>
+</html>
+</file>
+
+<file path="supabaseClient.ts">
+import { createClient } from "@supabase/supabase-js";
+
+// Flag to temporarily disable Supabase connection
+export const isSupabaseDisabled = true; // Hardcoded to true as requested to lock connection
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "https://placeholder.supabase.co";
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || "placeholder";
+
+// Only create client if not disabled to avoid potential initialization errors with placeholders
+export const supabase = isSupabaseDisabled 
+  ? ({
+      from: () => ({
+        select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: null, error: null }), not: () => ({ select: () => Promise.resolve({ data: null, error: null }) }) }), upsert: () => Promise.resolve({ error: null }), delete: () => ({ eq: () => Promise.resolve({ error: null }) }), update: () => ({ eq: () => Promise.resolve({ error: null }), gte: () => ({ select: () => ({ single: () => Promise.resolve({ data: null, error: null }) }) }) }) }),
+      }),
+      auth: {
+        onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
+        getUser: () => Promise.resolve({ data: { user: null }, error: null }),
+      }
+    } as any)
+  : createClient(supabaseUrl, supabaseAnonKey);
+
+export default supabase;
+</file>
+
+<file path="test-genai.ts">
+import { GoogleGenAI, Modality } from "@google/genai";
+
+console.log("Environment variables:", Object.keys(process.env));
+console.log("API_KEY exists:", !!process.env.API_KEY);
+console.log("GEMINI_API_KEY exists:", !!process.env.GEMINI_API_KEY);
+
+const apiKey = process.env.API_KEY || "test";
+const ai = new GoogleGenAI({ apiKey });
+
+console.log("ai.models exists:", !!ai.models);
+if (ai.models) {
+    console.log("ai.models.generateVideos type:", typeof ai.models.generateVideos);
+    console.log("ai.models.generateContent type:", typeof ai.models.generateContent);
+}
+console.log("ai.operations exists:", !!ai.operations);
+if (ai.operations) {
+    console.log("ai.operations.getVideosOperation type:", typeof ai.operations.getVideosOperation);
+}
+console.log("Modality.AUDIO:", Modality.AUDIO);
+</file>
+
+<file path="types.ts">
+export enum VideoMode {
+  TEXT_TO_VIDEO = 'TEXT_TO_VIDEO',
+  IMAGE_TO_VIDEO = 'IMAGE_TO_VIDEO',
+  INTERPOLATION = 'INTERPOLATION',
+  CONSISTENCY = 'CONSISTENCY'
+}
+
+export enum Resolution {
+  R720P = '720p',
+  R1080P = '1080p'
+}
+
+export enum AspectRatio {
+  LANDSCAPE = '16:9',
+  PORTRAIT = '9:16',
+  SQUARE = '1:1',
+  SUPER_TALL = '1:2'
+}
+
+export interface GenerationHistory {
+  id: string;
+  url: string;
+  prompt: string;
+  timestamp: number;
+  mode: VideoMode;
+  progress?: number;
+  status?: string;
+  laneId?: string;
+}
+
+export interface SubscriptionPlan {
+  id: string;
+  name: string;
+  price: string;
+  duration: string;
+  concurrentLimit: number;
+  promptLimit: number;
+  subtitle: string;
+  stitchTime: string;
+  videoLimitText: string;
+}
+
+export interface UserProfile {
+  email: string;
+  phone?: string;
+  role: 'user' | 'admin';
+  plan_name: string;
+  plan_start_date?: string;
+  plan_expiry_date?: string;
+  plan_status: 'active' | 'expired' | 'suspended';
+  remaining_days: number;
+  project_name?: string;
+  api_keys?: string[];
+  machineId: string;
+  // Compatibility fields
+  accountType?: string;
+  expiryDate?: string;
+  usedCount?: number;
+  limitText?: string;
+  licenseInfo?: string;
+  is_active?: boolean;
+}
+
+// Fixed: Export BatchResult interface for consistency across components
+export interface BatchResult {
+  prompt: string;
+  url: string;
+  selected?: boolean;
+  error?: string;
+}
+</file>
+
+<file path="vite.config.ts">
+import path from 'path';
+import { defineConfig, loadEnv } from 'vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig(({ mode }) => {
+    const env = loadEnv(mode, '.', '');
+    console.log('Vite Config Environment Check:', {
+      mode,
+      hasEnvGemini: !!env.GEMINI_API_KEY,
+      hasProcessGemini: !!process.env.GEMINI_API_KEY,
+      hasProcessApiKey: !!process.env.API_KEY,
+    });
+    return {
+      server: {
+        port: 3000,
+        host: '0.0.0.0',
+      },
+      plugins: [react()],
+      define: {
+        'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY || env.API_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY || ''),
+        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY || env.API_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY || ''),
+        'process.env.GOOGLE_KEY_PRO1': JSON.stringify(env.GOOGLE_KEY_PRO1 || process.env.GOOGLE_KEY_PRO1 || ''),
+        'process.env.GOOGLE_KEY_PRO9': JSON.stringify(env.GOOGLE_KEY_PRO9 || process.env.GOOGLE_KEY_PRO9 || ''),
+        'process.env.TTS_API_KEY': JSON.stringify(env.TTS_API_KEY || env.GEMINI_API_KEY || env.API_KEY || process.env.TTS_API_KEY || '')
+      },
+      resolve: {
+        alias: {
+          // Fixed: use path.resolve() which defaults to the current working directory, avoiding potential type issues with process.cwd()
+          '@': path.resolve('.'),
+        }
+      }
+    };
+});
+</file>
+
+</files>
