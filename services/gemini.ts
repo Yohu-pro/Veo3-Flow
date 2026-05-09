@@ -278,10 +278,10 @@ export const generateGeminiText = async (
   
   if (useProjectKey) {
     if (defaultKey) allKeys.push(defaultKey);
-    const pro1 = process.env.GOOGLE_KEY_PRO1;
-    const pro9 = process.env.GOOGLE_KEY_PRO9;
-    if (pro1) allKeys.push(pro1);
-    if (pro9) allKeys.push(pro9);
+    for (let i = 1; i <= 20; i++) {
+  const key = process.env[`GOOGLE_KEY_PRO${i}`];
+  if (key) allKeys.push(key);
+}
   } else {
     allKeys = [...apiKeys];
     if (customKey && !customKey.startsWith('GOOGLE_KEY_')) allKeys.unshift(customKey);
